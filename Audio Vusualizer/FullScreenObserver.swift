@@ -57,7 +57,10 @@ struct FullScreenObserver: NSViewRepresentable {
                                   (NSWindow.willExitFullScreenNotification, false),
                                   (NSWindow.didExitFullScreenNotification, false)] {
                 tokens.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.onChange?(value) }
+                    MainActor.assumeIsolated {
+                        self?.onChange?(value)
+                        self?.updateTitleBarClickThrough()
+                    }
                 })
             }
             for (name, value) in [(NSMenu.didBeginTrackingNotification, true),
@@ -95,6 +98,19 @@ struct FullScreenObserver: NSViewRepresentable {
 
         private func report(_ window: NSWindow) {
             onChange?(window.styleMask.contains(.fullScreen))
+            updateTitleBarClickThrough()
+        }
+
+        /// In full screen the window's (hidden) title bar lives in a separate system window
+        /// over the top of the screen; it slides in invisibly and swallows clicks meant for
+        /// the sidebar's top. Let clicks pass through it while in full screen.
+        private func updateTitleBarClickThrough() {
+            guard let window else { return }
+            let full = window.styleMask.contains(.fullScreen)
+            for other in NSApp.windows where other !== window
+                && String(describing: type(of: other)).contains("FullScreen") {
+                other.ignoresMouseEvents = full
+            }
         }
 
         private func stopObserving() {
