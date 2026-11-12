@@ -13,5 +13,7 @@ struct Audio_VusualizerApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1200, height: 520)
     }
 }
