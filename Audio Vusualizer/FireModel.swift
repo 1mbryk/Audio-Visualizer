@@ -44,6 +44,14 @@ final class FireModel {
     private var effectiveBellStrength: Double { stereo ? bellStrength * 0.38 : bellStrength }
     private var effectiveBellWidth: Double { stereo ? bellWidth * 1.55 : bellWidth }
 
+    /// АЧХ submode: loudness (0...1) of each tongue's frequency band, bass on the left.
+    /// When set, it replaces the overall/stereo loudness and the bell is switched off,
+    /// so the edges (deep bass, high treble) aren't muted.
+    var bandLevels: [Double]?
+
+    /// Number of tongues (envelope nodes) across the width.
+    var tongueCount: Int { tongues.count }
+
     /// Height factor for a horizontal position `x` normalized to -1...1.
     func bell(_ x: Double) -> Double {
         let sigma = effectiveBellWidth
@@ -146,11 +154,19 @@ final class FireModel {
         let last = Double(max(tongues.count - 1, 1))
         return tongues.enumerated().map { i, t in
             let u = Double(i) / last                 // 0 left edge ... 1 right edge
-            // In stereo the loudness crossfades smoothly from the left to the right channel.
-            let loud = stereo ? loudnessLeft + (loudnessRight - loudnessLeft) * u : loudness
+            let loud: Double
+            let shape: Double
+            if let bands = bandLevels, bands.count == tongues.count {
+                loud = bands[i]
+                shape = 1
+            } else {
+                // In stereo the loudness crossfades smoothly from the left to the right channel.
+                loud = stereo ? loudnessLeft + (loudnessRight - loudnessLeft) * u : loudness
+                shape = bell(u * 2 - 1)
+            }
             // A small flame always burns; loudness scales everything else.
             let amp = 0.08 + 0.95 * pow(loud, 1.15)
-            return Float(min((t.height + t.boost) * amp * bell(u * 2 - 1), 1.4))
+            return Float(min((t.height + t.boost) * amp * shape, 1.4))
         }
     }
 

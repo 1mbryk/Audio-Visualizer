@@ -13,12 +13,17 @@ struct ContentView: View {
     @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
     @AppStorage(SettingsKey.mode) private var mode = VisualizerMode.campfire
     @AppStorage(SettingsKey.fullScreenHint) private var showHintSetting = true
+    @AppStorage(CampfireSettings.submode) private var campfireSubmode = CampfireSubmode.mono
+    @AppStorage(WaveformSettings.stereo) private var waveformStereo = false
+    @AppStorage(SpectrumSettings.stereo) private var spectrumStereo = false
     @State private var isFullScreen = false
     /// The pointer is at the left edge in full screen, so the sidebar is shown.
     @State private var sidebarRevealed = false
     /// "Controls are on the left" hint, shown for a few seconds on entering full screen.
     @State private var hintVisible = false
     @State private var hintTask: Task<Void, Never>?
+    /// Lets the glass highlight glide between rows when the selection changes.
+    @Namespace private var glassNamespace
 
     /// Width of the full-screen sidebar.
     private let sidebarWidth: CGFloat = 220
@@ -90,14 +95,16 @@ struct ContentView: View {
             .onDisappear { audio.stop() }
     }
 
-    @ViewBuilder
+    /// Every visualization runs edge to edge, under the header.
     private var visualizer: some View {
-        switch mode {
-        // The fire and the waveform run under the header, edge to edge.
-        case .campfire: CampfireView(audio: audio).ignoresSafeArea()
-        case .waveform: WaveformView(audio: audio).ignoresSafeArea()
-        case .spectrum: SpectrumView(audio: audio)
+        Group {
+            switch mode {
+            case .campfire: CampfireView(audio: audio)
+            case .waveform: WaveformView(audio: audio)
+            case .spectrum: SpectrumView(audio: audio)
+            }
         }
+        .ignoresSafeArea()
     }
 
     // MARK: Hint
@@ -144,7 +151,12 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var header: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            modeMenu
+            HStack(spacing: 12) {
+                modeMenu
+                // Submodes of the current mode, as in the full-screen sidebar.
+                submodePicker(for: mode)
+                    .fixedSize()
+            }
         }
         ToolbarItem(placement: .primaryAction) {
             settingsButton
@@ -179,23 +191,37 @@ struct ContentView: View {
 
     // MARK: Full-screen sidebar
 
-    /// Full-screen controls: window buttons, the list of modes and settings, on an
-    /// ultra-thin panel at the left edge (clear of the system menu bar at the top).
+    /// Full-screen controls: window buttons, the list of modes, the current mode's
+    /// submodes and settings, on an ultra-thin panel at the left edge.
+    /// Selected rows and buttons are glass, like the toolbar.
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             WindowControls()
                 .fixedSize()
                 .padding(.leading, 8)
+                .padding(.bottom, 4)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Режим")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 10)
-                    .padding(.bottom, 4)
-                ForEach(VisualizerMode.allCases) { item in
-                    sidebarRow(item.title, systemImage: item.systemImage, selected: item == mode) {
-                        mode = item
+            GlassEffectContainer {
+                VStack(alignment: .leading, spacing: 2) {
+                    sectionTitle("Режим")
+                    ForEach(VisualizerMode.allCases) { item in
+                        sidebarRow(item.title, systemImage: item.systemImage, selected: item == mode,
+                                   glassID: "mode") {
+                            mode = item
+                        }
+                    }
+                }
+            }
+
+            Divider()
+                .padding(.horizontal, 6)
+
+            GlassEffectContainer {
+                VStack(alignment: .leading, spacing: 2) {
+                    sectionTitle("Подрежим")
+                    ForEach(submodes(for: mode)) { item in
+                        sidebarRow(item.title, systemImage: item.systemImage, selected: item.selected,
+                                   glassID: "submode", action: item.select)
                     }
                 }
             }
@@ -203,13 +229,15 @@ struct ContentView: View {
             Spacer()
 
             SettingsLink {
-                rowLabel("Настройки", systemImage: "gearshape", selected: false)
+                Label("Настройки", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glass)
+            .controlSize(.large)
             .help("Настройки (⌘,)")
         }
-        // Below the area the system menu bar slides over.
-        .padding(.top, 44)
+        // From the top edge; the window buttons sit where they are in a normal window.
+        .padding(.top, 19)
         .padding(.bottom, 20)
         .padding(.horizontal, 12)
         .frame(width: sidebarWidth)
@@ -218,32 +246,111 @@ struct ContentView: View {
         .overlay(alignment: .trailing) {
             Rectangle().fill(.white.opacity(0.08)).frame(width: 1)
         }
+        .animation(.snappy(duration: 0.25), value: mode)
+    }
+
+    private func sectionTitle(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.leading, 10)
+            .padding(.bottom, 4)
+    }
+
+    private struct SubmodeItem: Identifiable {
+        let id: String
+        let title: LocalizedStringKey
+        let systemImage: String
+        let selected: Bool
+        let select: () -> Void
+    }
+
+    /// Rows for the current mode's submodes: Моно / Стерео / АЧХ for the fire,
+    /// Моно / Стерео for the bar modes.
+    private func submodes(for item: VisualizerMode) -> [SubmodeItem] {
+        func channels(_ stereo: Binding<Bool>) -> [SubmodeItem] {
+            [SubmodeItem(id: "mono", title: "Моно", systemImage: "speaker.wave.2",
+                         selected: !stereo.wrappedValue) { stereo.wrappedValue = false },
+             SubmodeItem(id: "stereo", title: "Стерео", systemImage: "hifispeaker.2",
+                         selected: stereo.wrappedValue) { stereo.wrappedValue = true }]
+        }
+        switch item {
+        case .campfire:
+            let icons: [CampfireSubmode: String] = [.mono: "speaker.wave.2", .stereo: "hifispeaker.2",
+                                                    .spectrum: "chart.bar.xaxis"]
+            return CampfireSubmode.allCases.map { sub in
+                SubmodeItem(id: sub.rawValue, title: sub.title, systemImage: icons[sub]!,
+                            selected: campfireSubmode == sub) { campfireSubmode = sub }
+            }
+        case .waveform: return channels($waveformStereo)
+        case .spectrum: return channels($spectrumStereo)
+        }
+    }
+
+    /// Submodes of the selected mode: Моно / Стерео / АЧХ for the fire, Моно / Стерео otherwise.
+    @ViewBuilder
+    private func submodePicker(for item: VisualizerMode) -> some View {
+        switch item {
+        case .campfire:
+            Picker("Подрежим", selection: $campfireSubmode) {
+                ForEach(CampfireSubmode.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        case .waveform:
+            channelsPicker($waveformStereo)
+        case .spectrum:
+            channelsPicker($spectrumStereo)
+        }
+    }
+
+    private func channelsPicker(_ stereo: Binding<Bool>) -> some View {
+        Picker("Подрежим", selection: stereo) {
+            Text("Моно").tag(false)
+            Text("Стерео").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     private func sidebarRow(_ title: LocalizedStringKey, systemImage: String, selected: Bool,
-                            action: @escaping () -> Void) -> some View {
+                            glassID: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            rowLabel(title, systemImage: systemImage, selected: selected)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func rowLabel(_ title: LocalizedStringKey, systemImage: String, selected: Bool) -> some View {
-        HStack(spacing: 10) {
-            // Fixed-width icons so the titles line up.
-            Image(systemName: systemImage)
-                .frame(width: 22)
-            Text(title)
-        }
+            HStack(spacing: 10) {
+                // Fixed-width icons so the titles line up.
+                Image(systemName: systemImage)
+                    .frame(width: 22)
+                Text(title)
+            }
             .font(.body)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(selected ? Color.white.opacity(0.14) : .clear, in: .rect(cornerRadius: 8))
-            .contentShape(.rect)
+            .contentShape(.rect(cornerRadius: 10))
+            .modifier(SelectionGlass(selected: selected, id: glassID, namespace: glassNamespace))
+        }
+        .buttonStyle(.plain)
     }
+
 }
 
 #Preview {
     ContentView()
+}
+
+/// Glass highlight behind the selected sidebar row; it morphs between rows that share `id`.
+private struct SelectionGlass: ViewModifier {
+    let selected: Bool
+    let id: String
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if selected {
+            content
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 10))
+                .glassEffectID(id, in: namespace)
+        } else {
+            content
+        }
+    }
 }

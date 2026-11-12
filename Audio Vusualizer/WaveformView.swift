@@ -10,7 +10,9 @@ import SwiftUI
 
 /// Slowly following reference loudness (dB) for the waveform's auto level.
 final class AutoLevel {
-    private(set) var reference: Float = -30
+    /// nil until the first frame, which takes the level straight from the audio, so a
+    /// freshly opened view doesn't start with every bar pinned to the top.
+    private(set) var reference: Float?
 
     /// Feeds the current column levels and returns the smoothed reference.
     func update(with dbs: [Float]) -> Float {
@@ -20,8 +22,13 @@ final class AutoLevel {
                          -50) // below this it is silence: don't blow up the noise
         // Follow gently (per frame): a bit faster when it gets louder than when quieter,
         // so the scale itself doesn't make all bars pump.
-        reference += (target - reference) * (target > reference ? 0.05 : 0.01)
-        return reference
+        guard let current = reference else {
+            reference = target
+            return target
+        }
+        let next = current + (target - current) * (target > current ? 0.05 : 0.01)
+        reference = next
+        return next
     }
 }
 
@@ -60,6 +67,8 @@ struct WaveformView: View {
     /// dB of loudness between the bottom and the top of a bar.
     @AppStorage(WaveformSettings.rangeDB) private var rangeDB = WaveformSettings.defaultRangeDB
     @State private var level = AutoLevel()
+    /// When the view first drew: bars grow in from zero after switching to this mode.
+    @State private var appearance = Appearance()
     @State private var playhead = Playhead()
     /// Seconds of history shown across the width.
     @AppStorage(WaveformSettings.seconds) private var seconds = WaveformSettings.defaultSeconds
@@ -132,6 +141,7 @@ struct WaveformView: View {
         // Auto level: the loudest parts of the recent history reach the top,
         // and `range` dB below that is the bottom.
         let reference = level.update(with: up + down)
+        let grow = appearance.progress(at: date)
         let range = Float(rangeDB)
         let mid = size.height / 2
         // Bars may use the whole height; only a hairline is kept free at the edges.
@@ -139,7 +149,7 @@ struct WaveformView: View {
         func height(_ db: Float) -> CGFloat {
             let v = min(max(1 + (db - reference) / range, 0), 1)
             // Curve that stretches the loud end, so beats stand out from sustained parts.
-            return CGFloat(pow(v, 1.7)) * maxHalf
+            return CGFloat(pow(v, 1.7)) * maxHalf * grow
         }
 
         // Right-align the bars, then slide them left as the next bar fills up.
@@ -153,5 +163,17 @@ struct WaveformView: View {
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
             Gradient(colors: [.black.opacity(0.85), .black.opacity(0)]),
             startPoint: .zero, endPoint: CGPoint(x: size.width * 0.7, y: 0)))
+    }
+}
+
+/// Grow-in animation for a freshly shown visualization: 0 → 1 with an ease-out.
+final class Appearance {
+    private var start: Date?
+    let duration: TimeInterval = 0.6
+
+    func progress(at date: Date) -> CGFloat {
+        if start == nil { start = date }
+        let t = min(max(date.timeIntervalSince(start!) / duration, 0), 1)
+        return CGFloat(1 - pow(1 - t, 3))
     }
 }

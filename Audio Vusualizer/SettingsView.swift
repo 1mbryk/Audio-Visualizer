@@ -20,11 +20,38 @@ enum SettingsKey {
 
     /// Copies the old app-wide stereo choice into each mode's own switch, once.
     static func migrate(_ defaults: UserDefaults = .standard) {
-        guard let old = defaults.object(forKey: legacyStereo) as? Bool else { return }
-        for key in [CampfireSettings.stereo, WaveformSettings.stereo] where defaults.object(forKey: key) == nil {
-            defaults.set(old, forKey: key)
+        if let old = defaults.object(forKey: legacyStereo) as? Bool {
+            for key in [CampfireSettings.legacyStereo, WaveformSettings.stereo] where defaults.object(forKey: key) == nil {
+                defaults.set(old, forKey: key)
+            }
+            defaults.removeObject(forKey: legacyStereo)
         }
-        defaults.removeObject(forKey: legacyStereo)
+        // The campfire's stereo switch became one of its submodes.
+        if let old = defaults.object(forKey: CampfireSettings.legacyStereo) as? Bool {
+            if defaults.object(forKey: CampfireSettings.submode) == nil {
+                defaults.set((old ? CampfireSubmode.stereo : .mono).rawValue, forKey: CampfireSettings.submode)
+            }
+            defaults.removeObject(forKey: CampfireSettings.legacyStereo)
+        }
+    }
+}
+
+/// How the campfire follows the audio.
+enum CampfireSubmode: String, CaseIterable, Identifiable {
+    /// The whole fire follows the overall loudness.
+    case mono
+    /// Left half follows the left channel, right half the right one.
+    case stereo
+    /// Bass drives the left of the fire, treble the right.
+    case spectrum
+
+    var id: String { rawValue }
+    var title: LocalizedStringKey {
+        switch self {
+        case .mono: "Моно"
+        case .stereo: "Стерео"
+        case .spectrum: "АЧХ"
+        }
     }
 }
 
@@ -35,8 +62,10 @@ enum CampfireSettings {
     static let outlierRate = "campfire.outlierRate"
     static let sparks = "campfire.sparks"
     static let tongueWidth = "campfire.tongueWidth"
-    /// Left half of the fire follows the left channel, right half the right one.
-    static let stereo = "campfire.stereo"
+    /// `CampfireSubmode` raw value.
+    static let submode = "campfire.submode"
+    /// Old stereo switch, replaced by `submode`.
+    static let legacyStereo = "campfire.stereo"
 
     static let defaultBellStrength = 0.78
     static let defaultBellWidth = 0.45
@@ -79,7 +108,7 @@ struct SettingsView: View {
     @AppStorage(CampfireSettings.heightSpread) private var heightSpread = CampfireSettings.defaultHeightSpread
     @AppStorage(CampfireSettings.outlierRate) private var outlierRate = CampfireSettings.defaultOutlierRate
     @AppStorage(CampfireSettings.sparks) private var sparks = true
-    @AppStorage(CampfireSettings.stereo) private var campfireStereo = false
+    @AppStorage(CampfireSettings.submode) private var campfireSubmode = CampfireSubmode.mono
     @AppStorage(CampfireSettings.tongueWidth) private var tongueWidth = CampfireSettings.defaultTongueWidth
 
     @AppStorage(WaveformSettings.seconds) private var waveSeconds = WaveformSettings.defaultSeconds
@@ -131,8 +160,10 @@ struct SettingsView: View {
             spectrumBubble
         }
         .formStyle(.grouped)
+        // A fixed, comfortable height; the bubbles scroll inside it. The window can be
+        // made taller (or shorter, down to the minimum) by dragging its edge.
         .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(minHeight: 360, idealHeight: 620, maxHeight: .infinity)
     }
 
     // MARK: Mode bubbles
@@ -150,10 +181,13 @@ struct SettingsView: View {
             slider("Выбросы", value: $outlierRate, in: 0...0.5,
                    text: outlierRate.formatted(.number.precision(.fractionLength(2))) + " / с")
             Toggle("Искры", isOn: $sparks)
-            Toggle(isOn: $campfireStereo) {
-                Text("Стерео")
-                Text("Левая половина костра реагирует на левый канал, правая — на правый.")
+            Picker(selection: $campfireSubmode) {
+                ForEach(CampfireSubmode.allCases) { Text($0.title).tag($0) }
+            } label: {
+                Text("Подрежим")
+                Text("Стерео: левая половина — левый канал, правая — правый. АЧХ: басы слева, высокие справа.")
             }
+            .pickerStyle(.segmented)
         } header: {
             bubbleHeader(VisualizerMode.campfire,
                          isDefault: bellStrength == CampfireSettings.defaultBellStrength
@@ -161,9 +195,9 @@ struct SettingsView: View {
                             && heightSpread == CampfireSettings.defaultHeightSpread
                             && outlierRate == CampfireSettings.defaultOutlierRate
                             && sparks
-                            && !campfireStereo
+                            && campfireSubmode == .mono
                             && tongueWidth == CampfireSettings.defaultTongueWidth) {
-                campfireStereo = false
+                campfireSubmode = .mono
                 tongueWidth = CampfireSettings.defaultTongueWidth
                 bellStrength = CampfireSettings.defaultBellStrength
                 bellWidth = CampfireSettings.defaultBellWidth
@@ -187,10 +221,7 @@ struct SettingsView: View {
             slider("Диапазон громкости", value: $waveRange, in: 9...48, step: 3,
                    text: waveRange.formatted(.number.precision(.fractionLength(0))) + " дБ")
             Toggle("Затухание прошлого", isOn: $waveFade)
-            Toggle(isOn: $waveStereo) {
-                Text("Стерео")
-                Text("Левый канал над центральной линией, правый — под ней.")
-            }
+            channelsPicker($waveStereo)
         } header: {
             bubbleHeader(VisualizerMode.waveform,
                          isDefault: waveSeconds == WaveformSettings.defaultSeconds
@@ -219,10 +250,7 @@ struct SettingsView: View {
                    text: specRange.formatted(.number.precision(.fractionLength(0))) + " дБ")
             slider("Плавность спада", value: $specSmoothing, in: 0...0.95,
                    text: (specSmoothing * 100).formatted(.number.precision(.fractionLength(0))) + " %")
-            Toggle(isOn: $specStereo) {
-                Text("Стерео")
-                Text("Левый канал над центральной линией, правый — под ней.")
-            }
+            channelsPicker($specStereo)
         } header: {
             bubbleHeader(VisualizerMode.spectrum,
                          isDefault: specBarWidth == SpectrumSettings.defaultBarWidth
@@ -242,6 +270,18 @@ struct SettingsView: View {
     }
 
     // MARK: Building blocks
+
+    /// Моно / Стерео submode of the bar modes (stereo: left channel above, right below).
+    private func channelsPicker(_ stereo: Binding<Bool>) -> some View {
+        Picker(selection: stereo) {
+            Text("Моно").tag(false)
+            Text("Стерео").tag(true)
+        } label: {
+            Text("Подрежим")
+            Text("Стерео: левый канал над центральной линией, правый — под ней.")
+        }
+        .pickerStyle(.segmented)
+    }
 
     private func bubbleHeader(_ mode: VisualizerMode, isDefault: Bool,
                               reset: @escaping () -> Void) -> some View {

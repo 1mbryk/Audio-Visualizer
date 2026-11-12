@@ -23,5 +23,8 @@ struct Audio_VusualizerApp: App {
         Settings {
             SettingsView()
         }
+        // Sized by the content: 480 pt wide, 620 pt tall by default, resizable vertically.
+        .windowResizability(.contentSize)
+        .defaultSize(width: 480, height: 620)
     }
 }
