@@ -25,6 +25,34 @@ final class AutoLevel {
     }
 }
 
+/// Smoothly advancing position in the audio (in blocks) that the waveform scrolls by.
+final class Playhead {
+    /// How far the playhead stays behind the newest audio, seconds. Covers the gap
+    /// between audio callbacks so the playhead never has to wait for data.
+    static let latency = 0.045
+
+    private var position: Double?
+    private var lastDate: Date?
+
+    func advance(to date: Date, newestBlock: Int, blocksPerSecond: Double) -> Double {
+        let target = Double(newestBlock) - Self.latency * blocksPerSecond
+        let dt = min(max(date.timeIntervalSince(lastDate ?? date), 0), 0.1)
+        lastDate = date
+
+        guard var p = position, abs(target - p) < blocksPerSecond * 0.5 else {
+            // First frame, or far off (e.g. after a pause): jump straight there.
+            position = target
+            return target
+        }
+        // Constant speed, nudged gently towards the real stream to absorb clock drift.
+        p += dt * blocksPerSecond
+        p += (target - p) * min(1, dt * 1.5)
+        p = min(p, Double(newestBlock))
+        position = p
+        return p
+    }
+}
+
 struct WaveformView: View {
     let audio: SystemAudioMonitor
 
@@ -32,6 +60,7 @@ struct WaveformView: View {
     /// dB of loudness between the bottom and the top of a bar.
     @AppStorage(WaveformSettings.rangeDB) private var rangeDB = WaveformSettings.defaultRangeDB
     @State private var level = AutoLevel()
+    @State private var playhead = Playhead()
     /// Seconds of history shown across the width.
     @AppStorage(WaveformSettings.seconds) private var seconds = WaveformSettings.defaultSeconds
     /// Width of one bar, points; the gap after it is half as wide (at least 1 pt).
@@ -45,14 +74,13 @@ struct WaveformView: View {
         TimelineView(.animation) { timeline in
             // Capturing the date makes the Canvas redraw every frame.
             Canvas { [date = timeline.date] context, size in
-                _ = date
-                draw(in: &context, size: size)
+                draw(in: &context, size: size, date: date)
             }
         }
         .background(.black)
     }
 
-    private func draw(in context: inout GraphicsContext, size: CGSize) {
+    private func draw(in context: inout GraphicsContext, size: CGSize, date: Date) {
         let step = barWidth + barGap
         let columns = max(1, Int(size.width / step)) + 1          // +1 slides in from the right
         let blocksPerSecond = audio.sampleRate / Double(SystemAudioMonitor.peakBlock)
@@ -61,13 +89,19 @@ struct WaveformView: View {
         // Each bar's energy is measured over at least ~23 ms, or bass makes it flicker.
         let window = max(k, 4)
 
-        let rms = audio.recentRMS(count: columns * k + window)
+        // Audio arrives in bursts (one callback = several blocks), so scrolling by the
+        // newest block jerks. Scroll by a playhead on a smooth clock instead, which runs a
+        // little behind the newest data so there's always audio to show.
+        let latency = Int(Playhead.latency * blocksPerSecond) + 1
+        let rms = audio.recentRMS(count: columns * k + window + latency + 2 * k)
         let n = rms.left.count
         guard n > 0 else { return }
+        let head = playhead.advance(to: date, newestBlock: rms.end, blocksPerSecond: blocksPerSecond)
+        let whole = Int(head.rounded(.down))
         // Absolute block index where the newest complete bar ends.
-        let alignedEnd = rms.end - rms.end % k
+        let alignedEnd = whole - whole % k
         // How far the next (still filling) bar has grown: scroll by that fraction.
-        let scroll = CGFloat(rms.end % k) / CGFloat(k) * step
+        let scroll = CGFloat((head - Double(alignedEnd)) / Double(k)) * step
 
         /// RMS in dB over the `window` blocks ending at absolute block `endBlock`.
         func barDB(_ values: [Float], endBlock: Int) -> Float {
