@@ -17,28 +17,30 @@ func gaussian() -> Double {
 
 final class FireModel {
 
-    // MARK: Tunables
+    // MARK: Tunables (the `var`s are user settings, see `CampfireSettings`)
 
     /// Mean and spread of the (relative) tongue height, before loudness is applied.
     let heightMean = 0.55
-    let heightSigma = 0.16
+    var heightSigma = CampfireSettings.defaultHeightSpread
     /// Expected outliers per tongue per second, and their size range.
-    let outlierRate = 0.12
+    var outlierRate = CampfireSettings.defaultOutlierRate
     let outlierBoost = 1.5...2.4
     /// Horizontal distance between envelope nodes, points.
     let spacing: CGFloat = 40
-    /// Bell-shaped envelope across the width: σ in units of half-width,
-    /// and the minimum height factor kept at the edges so the fire spans the whole window.
-    let bellSigma = 0.45
-    let bellFloor = 0.22
-    /// In stereo mode the bell is much flatter so each side can follow its own channel.
-    let stereoBellSigma = 0.7
-    let stereoBellFloor = 0.7
+    /// Bell-shaped envelope across the width: how much lower the edges are than the
+    /// centre (0 = flat, 1 = edges die out) and its width (σ in units of half-width).
+    var bellStrength = CampfireSettings.defaultBellStrength
+    var bellWidth = CampfireSettings.defaultBellWidth
+    var sparksEnabled = true
+
+    /// In stereo mode the bell is much flatter and wider so each side can follow its own channel.
+    private var effectiveBellStrength: Double { stereo ? bellStrength * 0.38 : bellStrength }
+    private var effectiveBellWidth: Double { stereo ? bellWidth * 1.55 : bellWidth }
 
     /// Height factor for a horizontal position `x` normalized to -1...1.
     func bell(_ x: Double) -> Double {
-        let sigma = stereo ? stereoBellSigma : bellSigma
-        let floor = stereo ? stereoBellFloor : bellFloor
+        let sigma = effectiveBellWidth
+        let floor = 1 - effectiveBellStrength
         return floor + (1 - floor) * exp(-x * x / (2 * sigma * sigma))
     }
 
@@ -146,7 +148,7 @@ final class FireModel {
     }
 
     private func updateSparks(dt: Double, size: CGSize) {
-        let rate = 3 + 70 * loudness * loudness
+        let rate = sparksEnabled ? 3 + 70 * loudness * loudness : 0
         var toSpawn = rate * dt
         while toSpawn > 0 {
             if toSpawn < 1, Double.random(in: 0..<1) > toSpawn { break }
@@ -154,7 +156,7 @@ final class FireModel {
             let life = Double.random(in: 0.8...2.2)
             sparks.append(Spark(
                 // Sparks follow the same bell: mostly from the middle of the fire.
-                p: CGPoint(x: size.width * CGFloat(0.5 + 0.5 * min(max(gaussian() * (stereo ? stereoBellSigma : bellSigma) * 1.2, -1), 1)),
+                p: CGPoint(x: size.width * CGFloat(0.5 + 0.5 * min(max(gaussian() * effectiveBellWidth * 1.2, -1), 1)),
                            y: size.height - .random(in: size.height * 0.05...size.height * 0.3) * (0.3 + loudness)),
                 v: CGVector(dx: .random(in: -25...25), dy: -CGFloat.random(in: 60...200) * (0.5 + loudness)),
                 life: life, maxLife: life, size: .random(in: 0.8...2.2)))

@@ -12,10 +12,16 @@ struct CampfireView: View {
 
     @State private var fire = FireModel()
     @AppStorage(SettingsKey.stereo) private var stereo = false
+    @AppStorage(CampfireSettings.bellStrength) private var bellStrength = CampfireSettings.defaultBellStrength
+    @AppStorage(CampfireSettings.bellWidth) private var bellWidth = CampfireSettings.defaultBellWidth
+    @AppStorage(CampfireSettings.heightSpread) private var heightSpread = CampfireSettings.defaultHeightSpread
+    @AppStorage(CampfireSettings.outlierRate) private var outlierRate = CampfireSettings.defaultOutlierRate
+    @AppStorage(CampfireSettings.sparks) private var sparks = true
 
     var body: some View {
         TimelineView(.animation) { timeline in
             GeometryReader { geo in
+                let _ = applySettings()
                 let channels = audio.stereoLevels
                 let _ = fire.step(date: timeline.date, size: geo.size,
                                   level: Double(audio.level),
@@ -38,5 +44,13 @@ struct CampfireView: View {
                 }
             }
         }
+    }
+
+    private func applySettings() {
+        fire.bellStrength = bellStrength
+        fire.bellWidth = bellWidth
+        fire.heightSigma = heightSpread
+        fire.outlierRate = outlierRate
+        fire.sparksEnabled = sparks
     }
 }

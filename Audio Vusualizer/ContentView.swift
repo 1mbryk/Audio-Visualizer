@@ -50,6 +50,7 @@ struct ContentView: View {
     private var visualizer: some View {
         switch mode {
         case .campfire: CampfireView(audio: audio)
+        case .waveform: WaveformView(audio: audio)
         }
     }
 

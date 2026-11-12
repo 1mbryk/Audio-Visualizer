@@ -36,11 +36,111 @@ nonisolated final class SystemAudioMonitor: @unchecked Sendable {
         set { state.withLock { $0.gain = max(newValue, 0) } }
     }
 
+    /// The most recent `frames` samples of each channel, oldest first (gain not applied).
+    func recentSamples(frames: Int) -> (left: [Float], right: [Float]) {
+        state.withLock { s in
+            let n = min(frames, State.ringSize)
+            var left = [Float](repeating: 0, count: n)
+            var right = [Float](repeating: 0, count: n)
+            var j = (s.writeIndex - n + State.ringSize) % State.ringSize
+            for i in 0..<n {
+                left[i] = s.ringLeft[j]
+                right[i] = s.ringRight[j]
+                j = (j + 1) % State.ringSize
+            }
+            return (left, right)
+        }
+    }
+
+    /// The most recent `count` peak values per channel, oldest first (gain not applied).
+    /// Each value is the largest |sample| over `State.peakBlock` frames (~5 ms).
+    func recentPeaks(count: Int) -> (left: [Float], right: [Float]) {
+        state.withLock { s in
+            let n = min(count, State.peakRingSize)
+            var left = [Float](repeating: 0, count: n)
+            var right = [Float](repeating: 0, count: n)
+            var j = (s.peakIndex - n + State.peakRingSize) % State.peakRingSize
+            for i in 0..<n {
+                left[i] = s.peakLeft[j]
+                right[i] = s.peakRight[j]
+                j = (j + 1) % State.peakRingSize
+            }
+            return (left, right)
+        }
+    }
+
+    /// Sample rate of the captured stream, Hz.
+    var sampleRate: Double { state.withLock { $0.sampleRate } }
+
+    /// Frames per peak value in `recentPeaks`.
+    static var peakBlock: Int { State.peakBlock }
+
+    /// RMS of each peak block, per channel, oldest first (gain not applied).
+    /// `end` is the absolute number of blocks recorded so far, i.e. the index just
+    /// after the newest returned block; it lets views keep bars anchored to the audio.
+    func recentRMS(count: Int) -> (left: [Float], right: [Float], end: Int) {
+        state.withLock { s in
+            let n = min(count, State.peakRingSize)
+            var left = [Float](repeating: 0, count: n)
+            var right = [Float](repeating: 0, count: n)
+            var j = (s.peakIndex - n + State.peakRingSize) % State.peakRingSize
+            for i in 0..<n {
+                left[i] = s.rmsLeft[j]
+                right[i] = s.rmsRight[j]
+                j = (j + 1) % State.peakRingSize
+            }
+            return (left, right, s.totalBlocks)
+        }
+    }
+
     private struct State {
+        static let ringSize = 8192
+        /// Frames per peak value, and how many peak values are kept (~10 s at 48 kHz).
+        static let peakBlock = 256
+        static let peakRingSize = 2048
+
         var level: Float = 0
         var left: Float = 0
         var right: Float = 0
         var gain: Float = 1
+        var sampleRate: Double = 48_000
+        // Ring buffers with the latest raw samples, for waveform drawing.
+        var ringLeft = [Float](repeating: 0, count: ringSize)
+        var ringRight = [Float](repeating: 0, count: ringSize)
+        var writeIndex = 0
+        // Peak history for the amplitude waveform.
+        var peakLeft = [Float](repeating: 0, count: peakRingSize)
+        var peakRight = [Float](repeating: 0, count: peakRingSize)
+        var rmsLeft = [Float](repeating: 0, count: peakRingSize)
+        var rmsRight = [Float](repeating: 0, count: peakRingSize)
+        var peakIndex = 0
+        var totalBlocks = 0
+        var blockFrames = 0
+        var blockMax: (left: Float, right: Float) = (0, 0)
+        var blockSumSq: (left: Float, right: Float) = (0, 0)
+
+        mutating func push(_ l: Float, _ r: Float) {
+            ringLeft[writeIndex] = l
+            ringRight[writeIndex] = r
+            writeIndex = (writeIndex + 1) % Self.ringSize
+
+            blockMax.left = max(blockMax.left, abs(l))
+            blockMax.right = max(blockMax.right, abs(r))
+            blockSumSq.left += l * l
+            blockSumSq.right += r * r
+            blockFrames += 1
+            if blockFrames == Self.peakBlock {
+                peakLeft[peakIndex] = blockMax.left
+                peakRight[peakIndex] = blockMax.right
+                rmsLeft[peakIndex] = sqrt(blockSumSq.left / Float(Self.peakBlock))
+                rmsRight[peakIndex] = sqrt(blockSumSq.right / Float(Self.peakBlock))
+                peakIndex = (peakIndex + 1) % Self.peakRingSize
+                totalBlocks += 1
+                blockFrames = 0
+                blockMax = (0, 0)
+                blockSumSq = (0, 0)
+            }
+        }
     }
     private let state = Mutex(State())
 
@@ -89,6 +189,16 @@ nonisolated final class SystemAudioMonitor: @unchecked Sendable {
             self?.process(inData)
         }, "AudioDeviceCreateIOProcIDWithBlock")
         ioProcID = procID
+
+        var rate = Float64(0)
+        var rateSize = UInt32(MemoryLayout<Float64>.size)
+        var rateAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        if AudioObjectGetPropertyData(aggregateID, &rateAddress, 0, nil, &rateSize, &rate) == noErr, rate > 0 {
+            state.withLock { $0.sampleRate = rate }
+        }
 
         try check(AudioDeviceStart(aggregateID, ioProcID), "AudioDeviceStart")
     }
@@ -154,6 +264,30 @@ nonisolated final class SystemAudioMonitor: @unchecked Sendable {
             s.level = follow(s.level, rms: rmsBoth, gain: s.gain)
             s.left = follow(s.left, rms: rmsLeft, gain: s.gain)
             s.right = follow(s.right, rms: rmsRight, gain: s.gain)
+            store(buffers, into: &s)
+        }
+    }
+
+    /// Appends the callback's samples to the ring buffers (in place, no allocations).
+    private func store(_ buffers: UnsafeMutableAudioBufferListPointer, into s: inout State) {
+        guard let first = buffers.first, let firstData = first.mData else { return }
+        let channels = max(Int(first.mNumberChannels), 1)
+        let a = firstData.assumingMemoryBound(to: Float32.self)
+        let n = Int(first.mDataByteSize) / MemoryLayout<Float32>.size
+
+        if channels >= 2 {
+            var i = 0
+            while i + 1 < n {
+                s.push(a[i], a[i + 1])
+                i += channels
+            }
+        } else {
+            // One buffer per channel; a lone buffer is mono and feeds both sides.
+            let b = buffers.count > 1 ? buffers[1].mData?.assumingMemoryBound(to: Float32.self) : nil
+            let nb = buffers.count > 1 ? Int(buffers[1].mDataByteSize) / MemoryLayout<Float32>.size : n
+            for i in 0..<min(n, nb) {
+                s.push(a[i], b?[i] ?? a[i])
+            }
         }
     }
 
