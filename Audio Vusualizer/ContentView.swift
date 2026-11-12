@@ -30,8 +30,10 @@ struct ContentView: View {
                             .float(Float(fire.time)),
                             .float(Float(fire.loudness)),
                             .floatArray(fire.envelope())))
-                    Canvas { context, _ in
-                        fire.drawSparks(in: &context)
+                    // The renderer must capture the frame date: otherwise SwiftUI sees an
+                    // unchanged Canvas (same `fire` reference) and skips most redraws.
+                    Canvas { [date = timeline.date] context, _ in
+                        fire.drawSparks(in: &context, frame: date)
                     }
                     .blendMode(.plusLighter)
                 }

@@ -58,6 +58,10 @@ final class FireModel {
         var life: Double
         let maxLife: Double
         let size: CGFloat
+        /// Own phase and rate of the sideways drift, so the motion stays smooth
+        /// when other sparks are removed from the array.
+        let phase = Double.random(in: 0..<(2 * .pi))
+        let drift = Double.random(in: 2...4)
     }
 
     private(set) var tongues: [Tongue] = []
@@ -157,7 +161,7 @@ final class FireModel {
         }
         for i in sparks.indices {
             sparks[i].life -= dt
-            sparks[i].v.dx += CGFloat(sin(time * 3 + Double(i)) * 40 * dt)
+            sparks[i].v.dx += CGFloat(sin(time * sparks[i].drift + sparks[i].phase) * 40 * dt)
             sparks[i].p.x += sparks[i].v.dx * dt
             sparks[i].p.y += sparks[i].v.dy * dt
         }
@@ -166,7 +170,8 @@ final class FireModel {
 
     // MARK: Drawing
 
-    func drawSparks(in context: inout GraphicsContext) {
+    /// `frame` is the timeline date of the frame being drawn; it is what makes the Canvas redraw.
+    func drawSparks(in context: inout GraphicsContext, frame: Date) {
         for s in sparks {
             let k = s.life / s.maxLife
             let r = s.size * CGFloat(0.5 + 0.5 * k)
