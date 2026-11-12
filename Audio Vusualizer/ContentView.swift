@@ -102,6 +102,7 @@ struct ContentView: View {
             case .campfire: CampfireView(audio: audio)
             case .waveform: WaveformView(audio: audio)
             case .spectrum: SpectrumView(audio: audio)
+            case .matrix: MatrixView(audio: audio)
             }
         }
         .ignoresSafeArea()
@@ -213,15 +214,19 @@ struct ContentView: View {
                 }
             }
 
-            Divider()
-                .padding(.horizontal, 6)
+            // Modes with a single submode (the matrix: АЧХ only) have nothing to choose here.
+            let items = submodes(for: mode)
+            if !items.isEmpty {
+                Divider()
+                    .padding(.horizontal, 6)
 
-            GlassEffectContainer {
-                VStack(alignment: .leading, spacing: 2) {
-                    sectionTitle("Подрежим")
-                    ForEach(submodes(for: mode)) { item in
-                        sidebarRow(item.title, systemImage: item.systemImage, selected: item.selected,
-                                   glassID: "submode", action: item.select)
+                GlassEffectContainer {
+                    VStack(alignment: .leading, spacing: 2) {
+                        sectionTitle("Подрежим")
+                        ForEach(items) { item in
+                            sidebarRow(item.title, systemImage: item.systemImage, selected: item.selected,
+                                       glassID: "submode", action: item.select)
+                        }
                     }
                 }
             }
@@ -284,6 +289,7 @@ struct ContentView: View {
             }
         case .waveform: return channels($waveformStereo)
         case .spectrum: return channels($spectrumStereo)
+        case .matrix: return []   // one submode only: АЧХ
         }
     }
 
@@ -301,6 +307,8 @@ struct ContentView: View {
             channelsPicker($waveformStereo)
         case .spectrum:
             channelsPicker($spectrumStereo)
+        case .matrix:
+            EmptyView()   // one submode only: АЧХ
         }
     }
 

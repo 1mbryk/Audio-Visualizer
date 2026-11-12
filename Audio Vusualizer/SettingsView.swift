@@ -99,6 +99,20 @@ enum SpectrumSettings {
     static let defaultSmoothing = 0.8
 }
 
+enum MatrixSettings {
+    static let glyphSize = "matrix.glyphSize"
+    static let speed = "matrix.speed"
+    static let trail = "matrix.trail"
+    static let rangeDB = "matrix.rangeDB"
+    static let spawnRate = "matrix.spawnRate"
+
+    static let defaultGlyphSize = 16.0
+    static let defaultSpeed = 1.0
+    static let defaultTrail = 1.0
+    static let defaultRangeDB = 30.0
+    static let defaultSpawnRate = 1.0
+}
+
 struct SettingsView: View {
     @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
     @AppStorage(SettingsKey.fullScreenHint) private var fullScreenHint = true
@@ -121,6 +135,17 @@ struct SettingsView: View {
     @AppStorage(SpectrumSettings.rangeDB) private var specRange = SpectrumSettings.defaultRangeDB
     @AppStorage(SpectrumSettings.smoothing) private var specSmoothing = SpectrumSettings.defaultSmoothing
     @AppStorage(SpectrumSettings.stereo) private var specStereo = false
+
+    @AppStorage(MatrixSettings.glyphSize) private var matrixGlyphSize = MatrixSettings.defaultGlyphSize
+    @AppStorage(MatrixSettings.speed) private var matrixSpeed = MatrixSettings.defaultSpeed
+    @AppStorage(MatrixSettings.trail) private var matrixTrail = MatrixSettings.defaultTrail
+    @AppStorage(MatrixSettings.rangeDB) private var matrixRange = MatrixSettings.defaultRangeDB
+    @AppStorage(MatrixSettings.spawnRate) private var matrixSpawn = MatrixSettings.defaultSpawnRate
+
+    /// Log2 scale, so ×0.5 and ×2 sit symmetrically around ×1.
+    private var matrixSpawnSlider: Binding<Double> {
+        Binding(get: { log2(matrixSpawn) }, set: { matrixSpawn = pow(2, $0) })
+    }
 
     /// The slider works on a log2 scale so ×0.5 and ×2 sit symmetrically around ×1.
     private var sensitivitySlider: Binding<Double> {
@@ -158,6 +183,7 @@ struct SettingsView: View {
             campfireBubble
             waveformBubble
             spectrumBubble
+            matrixBubble
         }
         .formStyle(.grouped)
         // A fixed, comfortable height; the bubbles scroll inside it. The window can be
@@ -264,6 +290,38 @@ struct SettingsView: View {
             }
         } footer: {
             Text("Басы слева, высокие справа (30 Гц – 16 кГц, логарифмическая шкала). Уровень подстраивается под трек.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var matrixBubble: some View {
+        Section {
+            slider("Размер символов", value: $matrixGlyphSize, in: 10...28, step: 1,
+                   text: matrixGlyphSize.formatted(.number.precision(.fractionLength(0))) + " pt")
+            slider("Скорость", value: $matrixSpeed, in: 0.4...2.5,
+                   text: "×" + matrixSpeed.formatted(.number.precision(.fractionLength(2))))
+            slider("Частота новых символов", value: matrixSpawnSlider, in: -2...2,
+                   text: "×" + matrixSpawn.formatted(.number.precision(.fractionLength(2))))
+            slider("Длина следа", value: $matrixTrail, in: 0.4...2.5,
+                   text: "×" + matrixTrail.formatted(.number.precision(.fractionLength(2))))
+            slider("Диапазон громкости", value: $matrixRange, in: 18...60, step: 3,
+                   text: matrixRange.formatted(.number.precision(.fractionLength(0))) + " дБ")
+        } header: {
+            bubbleHeader(VisualizerMode.matrix,
+                         isDefault: matrixGlyphSize == MatrixSettings.defaultGlyphSize
+                            && matrixSpeed == MatrixSettings.defaultSpeed
+                            && matrixTrail == MatrixSettings.defaultTrail
+                            && matrixRange == MatrixSettings.defaultRangeDB
+                            && abs(matrixSpawn - MatrixSettings.defaultSpawnRate) < 0.001) {
+                matrixSpawn = MatrixSettings.defaultSpawnRate
+                matrixGlyphSize = MatrixSettings.defaultGlyphSize
+                matrixSpeed = MatrixSettings.defaultSpeed
+                matrixTrail = MatrixSettings.defaultTrail
+                matrixRange = MatrixSettings.defaultRangeDB
+            }
+        } footer: {
+            Text("Каждая колонка — своя полоса частот: басы слева, высокие справа. Чем громче полоса, тем чаще, длиннее и быстрее струи.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

@@ -11,6 +11,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
     case campfire
     case waveform
     case spectrum
+    case matrix
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
         case .campfire: "Костёр"
         case .waveform: "Вейвформа"
         case .spectrum: "АЧХ"
+        case .matrix: "Матрица"
         }
     }
 
@@ -27,6 +29,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
         case .campfire: "flame.fill"
         case .waveform: "waveform.path"
         case .spectrum: "chart.bar.xaxis"
+        case .matrix: "cloud.rain"
         }
     }
 }

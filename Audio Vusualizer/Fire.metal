@@ -110,3 +110,35 @@ static float3 fireColor(float t) {
 
     return half4(half3(max(col, 0.0)), 1.0h);
 }
+
+// MARK: - Matrix rain
+
+/// One pixel of the matrix rain. `cells` holds one value per grid cell (column-major):
+/// glyphIndex * 2 + brightness, where brightness is 0…1 and exactly 1 marks a drop's head.
+/// `atlas` is a texture with the glyphs drawn white, `atlasGrid` glyphs per row / rows.
+[[ stitchable ]] half4 matrixRain(float2 pos, half4 color,
+                                  float2 cell, float2 grid,
+                                  device const float *cells, int count,
+                                  texture2d<half> atlas, float2 atlasGrid) {
+    float2 c = pos / cell;
+    int cx = int(floor(c.x));
+    int cy = int(floor(c.y));
+    if (cx < 0 || cy < 0 || cx >= int(grid.x) || cy >= int(grid.y)) return half4(0, 0, 0, 1);
+    int index = cx * int(grid.y) + cy;
+    if (index >= count) return half4(0, 0, 0, 1);
+
+    float v = cells[index];
+    if (v <= 0.0) return half4(0, 0, 0, 1);
+    float g = floor(v * 0.5);
+    float b = v - g * 2.0;
+    bool head = b > 0.999;
+
+    float perRow = atlasGrid.x;
+    float2 glyphCell = float2(fmod(g, perRow), floor(g / perRow));
+    float2 uv = (glyphCell + fract(c)) / atlasGrid;
+    constexpr sampler s(address::clamp_to_edge, filter::linear);
+    float a = float(atlas.sample(s, uv).a);
+
+    float3 rgb = head ? float3(0.85, 1.0, 0.9) : float3(0.2, 1.0, 0.45) * min(b, 1.0);
+    return half4(half3(rgb * a), 1.0h);
+}
