@@ -12,6 +12,9 @@ struct ContentView: View {
     @State private var errorText: String?
     @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
     @AppStorage(SettingsKey.mode) private var mode = VisualizerMode.campfire
+    @State private var isFullScreen = false
+    /// The pointer is at the top edge in full screen, so the header is shown.
+    @State private var headerRevealed = false
 
     var body: some View {
         visualizer
@@ -31,8 +34,20 @@ struct ContentView: View {
             .background(.black)
             .toolbar { header }
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-            // In full screen the header hides and only slides in when the pointer reaches the top edge.
-            .windowToolbarFullScreenVisibility(.onHover)
+            // In full screen the header hides and only shows while the pointer is at the top
+            // edge. Driven by our own full-screen observer, because SwiftUI's
+            // `windowToolbarFullScreenVisibility` misses windows restored into full screen.
+            .toolbar(isFullScreen && !headerRevealed ? .hidden : .visible, for: .windowToolbar)
+            .background(FullScreenObserver(isFullScreen: $isFullScreen))
+            .onContinuousHover { phase in
+                guard isFullScreen, case .active(let point) = phase else {
+                    headerRevealed = false
+                    return
+                }
+                // Reveal at the very top edge; keep it while the pointer stays over the header.
+                headerRevealed = point.y < (headerRevealed ? 64 : 4)
+            }
+            .onChange(of: isFullScreen) { _, _ in headerRevealed = false }
             .onChange(of: sensitivity, initial: true) { _, value in
                 audio.gain = Float(value)
             }
