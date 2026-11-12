@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct Audio_VusualizerApp: App {
+    init() {
+        SettingsKey.migrate()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

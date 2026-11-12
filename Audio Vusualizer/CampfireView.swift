@@ -11,12 +11,13 @@ struct CampfireView: View {
     let audio: SystemAudioMonitor
 
     @State private var fire = FireModel()
-    @AppStorage(SettingsKey.stereo) private var stereo = false
+    @AppStorage(CampfireSettings.stereo) private var stereo = false
     @AppStorage(CampfireSettings.bellStrength) private var bellStrength = CampfireSettings.defaultBellStrength
     @AppStorage(CampfireSettings.bellWidth) private var bellWidth = CampfireSettings.defaultBellWidth
     @AppStorage(CampfireSettings.heightSpread) private var heightSpread = CampfireSettings.defaultHeightSpread
     @AppStorage(CampfireSettings.outlierRate) private var outlierRate = CampfireSettings.defaultOutlierRate
     @AppStorage(CampfireSettings.sparks) private var sparks = true
+    @AppStorage(CampfireSettings.tongueWidth) private var tongueWidth = CampfireSettings.defaultTongueWidth
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -34,6 +35,7 @@ struct CampfireView: View {
                             .float2(geo.size),
                             .float(Float(fire.time)),
                             .float(Float(fire.loudness)),
+                            .float(Float(tongueWidth)),
                             .floatArray(fire.envelope())))
                     // The renderer must capture the frame date: otherwise SwiftUI sees an
                     // unchanged Canvas (same `fire` reference) and skips most redraws.
@@ -52,5 +54,6 @@ struct CampfireView: View {
         fire.heightSigma = heightSpread
         fire.outlierRate = outlierRate
         fire.sparksEnabled = sparks
+        fire.tongueWidth = tongueWidth
     }
 }

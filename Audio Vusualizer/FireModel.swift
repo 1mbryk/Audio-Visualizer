@@ -25,8 +25,15 @@ final class FireModel {
     /// Expected outliers per tongue per second, and their size range.
     var outlierRate = CampfireSettings.defaultOutlierRate
     let outlierBoost = 1.5...2.4
-    /// Horizontal distance between envelope nodes, points.
-    let spacing: CGFloat = 40
+    /// Width of the tongues relative to the default (user setting).
+    var tongueWidth = CampfireSettings.defaultTongueWidth
+
+    /// Horizontal distance between envelope nodes. Proportional to the view height so
+    /// tongues keep their shape in a small window and in full screen alike
+    /// (~40 pt in a 450 pt tall window).
+    func spacing(for size: CGSize) -> CGFloat {
+        max(16, size.height * 0.09 * CGFloat(tongueWidth))
+    }
     /// Bell-shaped envelope across the width: how much lower the edges are than the
     /// centre (0 = flat, 1 = edges die out) and its width (σ in units of half-width).
     var bellStrength = CampfireSettings.defaultBellStrength
@@ -94,7 +101,7 @@ final class FireModel {
         loudnessLeft += (left - loudnessLeft) * k
         loudnessRight += (right - loudnessRight) * k
 
-        let needed = max(8, Int(size.width / spacing) + 1)
+        let needed = max(8, Int(size.width / spacing(for: size)) + 1)
         if tongues.count != needed {
             tongues = (0..<needed).map { _ in
                 var t = Tongue()

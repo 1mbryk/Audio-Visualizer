@@ -28,7 +28,7 @@ final class AutoLevel {
 struct WaveformView: View {
     let audio: SystemAudioMonitor
 
-    @AppStorage(SettingsKey.stereo) private var stereo = false
+    @AppStorage(WaveformSettings.stereo) private var stereo = false
     /// dB of loudness between the bottom and the top of a bar.
     @AppStorage(WaveformSettings.rangeDB) private var rangeDB = WaveformSettings.defaultRangeDB
     @State private var level = AutoLevel()

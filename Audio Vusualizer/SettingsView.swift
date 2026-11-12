@@ -11,10 +11,19 @@ import SwiftUI
 enum SettingsKey {
     /// Audio input gain multiplier, 0.25 ... 4 (1 = default).
     static let sensitivity = "sensitivity"
-    /// Each half of the visualization follows its own channel.
-    static let stereo = "stereo"
     /// Selected visualization (`VisualizerMode` raw value).
     static let mode = "mode"
+    /// Old app-wide stereo switch, replaced by one switch per mode.
+    static let legacyStereo = "stereo"
+
+    /// Copies the old app-wide stereo choice into each mode's own switch, once.
+    static func migrate(_ defaults: UserDefaults = .standard) {
+        guard let old = defaults.object(forKey: legacyStereo) as? Bool else { return }
+        for key in [CampfireSettings.stereo, WaveformSettings.stereo] where defaults.object(forKey: key) == nil {
+            defaults.set(old, forKey: key)
+        }
+        defaults.removeObject(forKey: legacyStereo)
+    }
 }
 
 enum CampfireSettings {
@@ -23,11 +32,15 @@ enum CampfireSettings {
     static let heightSpread = "campfire.heightSpread"
     static let outlierRate = "campfire.outlierRate"
     static let sparks = "campfire.sparks"
+    static let tongueWidth = "campfire.tongueWidth"
+    /// Left half of the fire follows the left channel, right half the right one.
+    static let stereo = "campfire.stereo"
 
     static let defaultBellStrength = 0.78
     static let defaultBellWidth = 0.45
     static let defaultHeightSpread = 0.16
     static let defaultOutlierRate = 0.12
+    static let defaultTongueWidth = 1.0
 }
 
 enum WaveformSettings {
@@ -35,6 +48,8 @@ enum WaveformSettings {
     static let barWidth = "waveform.barWidth"
     static let fade = "waveform.fade"
     static let rangeDB = "waveform.rangeDB"
+    /// Left channel above the centre line, right channel below.
+    static let stereo = "waveform.stereo"
 
     static let defaultSeconds = 6.0
     static let defaultRangeDB = 15.0
@@ -43,18 +58,20 @@ enum WaveformSettings {
 
 struct SettingsView: View {
     @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
-    @AppStorage(SettingsKey.stereo) private var stereo = false
 
     @AppStorage(CampfireSettings.bellStrength) private var bellStrength = CampfireSettings.defaultBellStrength
     @AppStorage(CampfireSettings.bellWidth) private var bellWidth = CampfireSettings.defaultBellWidth
     @AppStorage(CampfireSettings.heightSpread) private var heightSpread = CampfireSettings.defaultHeightSpread
     @AppStorage(CampfireSettings.outlierRate) private var outlierRate = CampfireSettings.defaultOutlierRate
     @AppStorage(CampfireSettings.sparks) private var sparks = true
+    @AppStorage(CampfireSettings.stereo) private var campfireStereo = false
+    @AppStorage(CampfireSettings.tongueWidth) private var tongueWidth = CampfireSettings.defaultTongueWidth
 
     @AppStorage(WaveformSettings.seconds) private var waveSeconds = WaveformSettings.defaultSeconds
     @AppStorage(WaveformSettings.barWidth) private var waveBarWidth = WaveformSettings.defaultBarWidth
     @AppStorage(WaveformSettings.fade) private var waveFade = true
     @AppStorage(WaveformSettings.rangeDB) private var waveRange = WaveformSettings.defaultRangeDB
+    @AppStorage(WaveformSettings.stereo) private var waveStereo = false
 
     /// The slider works on a log2 scale so ×0.5 and ×2 sit symmetrically around ×1.
     private var sensitivitySlider: Binding<Double> {
@@ -76,16 +93,10 @@ struct SettingsView: View {
                 }
                 valueRow("×\(sensitivity.formatted(.number.precision(.fractionLength(2))))",
                          note: "Чем выше, тем сильнее визуализация реагирует на тихий звук.")
-
-                Toggle(isOn: $stereo) {
-                    Text("Стерео")
-                    Text("Левый и правый каналы показываются отдельно.")
-                }
             } header: {
                 bubbleHeader("Общие", systemImage: "slider.horizontal.3",
-                             isDefault: abs(sensitivity - 1) < 0.001 && !stereo) {
+                             isDefault: abs(sensitivity - 1) < 0.001) {
                     sensitivity = 1
-                    stereo = false
                 }
             }
 
@@ -105,18 +116,28 @@ struct SettingsView: View {
                    text: (bellStrength * 100).formatted(.number.precision(.fractionLength(0))) + " %")
             slider("Ширина колокола", value: $bellWidth, in: 0.2...1,
                    text: bellWidth.formatted(.number.precision(.fractionLength(2))))
+            slider("Ширина языков", value: $tongueWidth, in: 0.5...2,
+                   text: "×" + tongueWidth.formatted(.number.precision(.fractionLength(2))))
             slider("Разброс высот", value: $heightSpread, in: 0...0.35,
                    text: heightSpread.formatted(.number.precision(.fractionLength(2))))
             slider("Выбросы", value: $outlierRate, in: 0...0.5,
                    text: outlierRate.formatted(.number.precision(.fractionLength(2))) + " / с")
             Toggle("Искры", isOn: $sparks)
+            Toggle(isOn: $campfireStereo) {
+                Text("Стерео")
+                Text("Левая половина костра реагирует на левый канал, правая — на правый.")
+            }
         } header: {
             bubbleHeader(VisualizerMode.campfire,
                          isDefault: bellStrength == CampfireSettings.defaultBellStrength
                             && bellWidth == CampfireSettings.defaultBellWidth
                             && heightSpread == CampfireSettings.defaultHeightSpread
                             && outlierRate == CampfireSettings.defaultOutlierRate
-                            && sparks) {
+                            && sparks
+                            && !campfireStereo
+                            && tongueWidth == CampfireSettings.defaultTongueWidth) {
+                campfireStereo = false
+                tongueWidth = CampfireSettings.defaultTongueWidth
                 bellStrength = CampfireSettings.defaultBellStrength
                 bellWidth = CampfireSettings.defaultBellWidth
                 heightSpread = CampfireSettings.defaultHeightSpread
@@ -139,12 +160,18 @@ struct SettingsView: View {
             slider("Диапазон громкости", value: $waveRange, in: 9...48, step: 3,
                    text: waveRange.formatted(.number.precision(.fractionLength(0))) + " дБ")
             Toggle("Затухание прошлого", isOn: $waveFade)
+            Toggle(isOn: $waveStereo) {
+                Text("Стерео")
+                Text("Левый канал над центральной линией, правый — под ней.")
+            }
         } header: {
             bubbleHeader(VisualizerMode.waveform,
                          isDefault: waveSeconds == WaveformSettings.defaultSeconds
                             && waveBarWidth == WaveformSettings.defaultBarWidth
                             && waveFade
-                            && waveRange == WaveformSettings.defaultRangeDB) {
+                            && waveRange == WaveformSettings.defaultRangeDB
+                            && !waveStereo) {
+                waveStereo = false
                 waveRange = WaveformSettings.defaultRangeDB
                 waveSeconds = WaveformSettings.defaultSeconds
                 waveBarWidth = WaveformSettings.defaultBarWidth

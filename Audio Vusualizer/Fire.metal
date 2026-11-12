@@ -67,20 +67,22 @@ static float3 fireColor(float t) {
 }
 
 [[ stitchable ]] half4 fire(float2 pos, half4 color,
-                            float2 size, float time, float loud,
+                            float2 size, float time, float loud, float widthScale,
                             device const float *hs, int count) {
     float2 uv = pos / size;
     float aspect = size.x / size.y;
     float h = 1.0 - uv.y;                       // 0 at the bottom, 1 at the top
 
     // Hot air sways the flame more the higher it goes.
-    float sway = (fbm(float2(uv.x * aspect * 1.5, h * 1.2 - time * 0.6)) - 0.5) * 0.22 * h;
+    // Horizontal noise frequency; lower = wider tongues.
+    float fx = aspect / max(widthScale, 0.1);
+    float sway = (fbm(float2(uv.x * fx * 1.5, h * 1.2 - time * 0.6)) - 0.5) * 0.22 * h;
     float x = uv.x + sway / aspect;
 
     float H = max(envelope(x, hs, count), 0.002);
 
     // Noise in view-height units so tongues keep their shape at any aspect ratio.
-    float2 q = float2(x * aspect * 3.2, h * 2.4 - time * 1.5);
+    float2 q = float2(x * fx * 3.2, h * 2.4 - time * 1.5);
     float n1 = fbm(q);
     float n2 = fbm(q * 2.1 + float2(3.7, -time * 1.1));
     float n = smoothstep(0.15, 0.85, n1 * 0.7 + n2 * 0.3);
