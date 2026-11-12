@@ -12,6 +12,8 @@ enum SettingsKey {
     static let sensitivity = "sensitivity"
     /// Left half of the fire follows the left channel, right half the right one.
     static let stereo = "stereo"
+    /// Selected visualization (`VisualizerMode` raw value).
+    static let mode = "mode"
 }
 
 struct SettingsView: View {
