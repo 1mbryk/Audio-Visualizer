@@ -11,11 +11,17 @@ struct ContentView: View {
     @State private var fire = FireModel()
     @State private var audio = SystemAudioMonitor()
     @State private var errorText: String?
+    @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
+    @AppStorage(SettingsKey.stereo) private var stereo = false
 
     var body: some View {
         TimelineView(.animation) { timeline in
             GeometryReader { geo in
-                let _ = fire.step(date: timeline.date, size: geo.size, level: Double(audio.level))
+                let channels = audio.stereoLevels
+                let _ = fire.step(date: timeline.date, size: geo.size,
+                                  level: Double(audio.level),
+                                  left: Double(channels.left), right: Double(channels.right),
+                                  stereo: stereo)
                 ZStack {
                     Rectangle()
                         .fill(.black)
@@ -44,6 +50,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 400, minHeight: 250)
         .background(.black)
+        .onChange(of: sensitivity, initial: true) { _, value in
+            audio.gain = Float(value)
+        }
         .task {
             do {
                 try audio.start()

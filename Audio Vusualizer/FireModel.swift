@@ -31,10 +31,15 @@ final class FireModel {
     /// and the minimum height factor kept at the edges so the fire spans the whole window.
     let bellSigma = 0.45
     let bellFloor = 0.22
+    /// In stereo mode the bell is much flatter so each side can follow its own channel.
+    let stereoBellSigma = 0.7
+    let stereoBellFloor = 0.7
 
     /// Height factor for a horizontal position `x` normalized to -1...1.
     func bell(_ x: Double) -> Double {
-        bellFloor + (1 - bellFloor) * exp(-x * x / (2 * bellSigma * bellSigma))
+        let sigma = stereo ? stereoBellSigma : bellSigma
+        let floor = stereo ? stereoBellFloor : bellFloor
+        return floor + (1 - floor) * exp(-x * x / (2 * sigma * sigma))
     }
 
     // MARK: State
@@ -60,18 +65,28 @@ final class FireModel {
     private var lastTime: Double?
     /// Seconds since the fire started; drives the shader's noise.
     private(set) var time: Double = 0
-    /// Smoothed loudness (0...1).
+    /// Smoothed loudness of both channels (0...1).
     private(set) var loudness: Double = 0
+    /// Smoothed loudness of the left and right channels (0...1), used in stereo mode.
+    private var loudnessLeft: Double = 0
+    private var loudnessRight: Double = 0
+    /// Stereo mode: the left half of the fire follows the left channel, the right half the right one.
+    private(set) var stereo = false
 
     // MARK: Update
 
-    func step(date: Date, size: CGSize, level: Double) {
+    func step(date: Date, size: CGSize, level: Double,
+              left: Double, right: Double, stereo: Bool) {
+        self.stereo = stereo
         let now = date.timeIntervalSinceReferenceDate
         let dt = min(max(now - (lastTime ?? now), 0), 1.0 / 20)
         lastTime = now
         time += dt
 
-        loudness += (level - loudness) * min(1, dt * 8)
+        let k = min(1, dt * 8)
+        loudness += (level - loudness) * k
+        loudnessLeft += (left - loudnessLeft) * k
+        loudnessRight += (right - loudnessRight) * k
 
         let needed = max(8, Int(size.width / spacing) + 1)
         if tongues.count != needed {
@@ -115,12 +130,14 @@ final class FireModel {
     /// Envelope heights for the shader, as fractions of the view height,
     /// evenly spaced from the left edge (first) to the right edge (last).
     func envelope() -> [Float] {
-        // A small flame always burns; loudness scales everything else.
-        let amp = 0.08 + 0.95 * pow(loudness, 1.15)
         let last = Double(max(tongues.count - 1, 1))
         return tongues.enumerated().map { i, t in
-            let x = Double(i) / last * 2 - 1
-            return Float(min((t.height + t.boost) * amp * bell(x), 1.4))
+            let u = Double(i) / last                 // 0 left edge ... 1 right edge
+            // In stereo the loudness crossfades smoothly from the left to the right channel.
+            let loud = stereo ? loudnessLeft + (loudnessRight - loudnessLeft) * u : loudness
+            // A small flame always burns; loudness scales everything else.
+            let amp = 0.08 + 0.95 * pow(loud, 1.15)
+            return Float(min((t.height + t.boost) * amp * bell(u * 2 - 1), 1.4))
         }
     }
 
@@ -133,7 +150,7 @@ final class FireModel {
             let life = Double.random(in: 0.8...2.2)
             sparks.append(Spark(
                 // Sparks follow the same bell: mostly from the middle of the fire.
-                p: CGPoint(x: size.width * CGFloat(0.5 + 0.5 * min(max(gaussian() * bellSigma * 1.2, -1), 1)),
+                p: CGPoint(x: size.width * CGFloat(0.5 + 0.5 * min(max(gaussian() * (stereo ? stereoBellSigma : bellSigma) * 1.2, -1), 1)),
                            y: size.height - .random(in: size.height * 0.05...size.height * 0.3) * (0.3 + loudness)),
                 v: CGVector(dx: .random(in: -25...25), dy: -CGFloat.random(in: 60...200) * (0.5 + loudness)),
                 life: life, maxLife: life, size: .random(in: 0.8...2.2)))

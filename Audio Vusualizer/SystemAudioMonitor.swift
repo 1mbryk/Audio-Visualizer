@@ -22,10 +22,26 @@ nonisolated final class SystemAudioMonitor: @unchecked Sendable {
         }
     }
 
-    /// Smoothed loudness, 0 (silence) ... 1 (very loud).
+    /// Smoothed loudness of both channels together, 0 (silence) ... 1 (very loud).
     var level: Float { state.withLock { $0.level } }
 
-    private struct State { var level: Float = 0 }
+    /// Smoothed loudness of the left and right channels separately, 0 ... 1.
+    var stereoLevels: (left: Float, right: Float) {
+        state.withLock { ($0.left, $0.right) }
+    }
+
+    /// Input gain (sensitivity) applied before measuring loudness; 1 = unchanged.
+    var gain: Float {
+        get { state.withLock { $0.gain } }
+        set { state.withLock { $0.gain = max(newValue, 0) } }
+    }
+
+    private struct State {
+        var level: Float = 0
+        var left: Float = 0
+        var right: Float = 0
+        var gain: Float = 1
+    }
     private let state = Mutex(State())
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
@@ -96,30 +112,58 @@ nonisolated final class SystemAudioMonitor: @unchecked Sendable {
     // MARK: - Processing
 
     private func process(_ bufferList: UnsafePointer<AudioBufferList>) {
-        var sumSquares: Float = 0
-        var count = 0
-        for buffer in UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList)) {
+        // The tap is stereo. Depending on the stream layout the samples arrive either
+        // interleaved in one buffer (L R L R …) or as one buffer per channel.
+        var sum: (left: Float, right: Float) = (0, 0)
+        var frames: (left: Int, right: Int) = (0, 0)
+
+        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))
+        for (index, buffer) in buffers.enumerated() {
             guard let data = buffer.mData else { continue }
             let n = Int(buffer.mDataByteSize) / MemoryLayout<Float32>.size
             let samples = data.assumingMemoryBound(to: Float32.self)
-            for i in 0..<n {
-                let s = samples[i]
-                sumSquares += s * s
-            }
-            count += n
-        }
-        guard count > 0 else { return }
+            let channels = max(Int(buffer.mNumberChannels), 1)
 
-        let rms = sqrt(sumSquares / Float(count))
-        let db = 20 * log10(max(rms, 1e-7))
-        // Map -55 dB ... -6 dB onto 0 ... 1.
-        let target = min(max((db + 55) / 49, 0), 1)
+            if channels >= 2 {
+                // Interleaved: channel 0 is left, channel 1 is right.
+                var i = 0
+                while i + 1 < n {
+                    sum.left += samples[i] * samples[i]
+                    sum.right += samples[i + 1] * samples[i + 1]
+                    i += channels
+                }
+                frames.left += n / channels
+                frames.right += n / channels
+            } else {
+                // One channel per buffer: even buffers are left, odd ones right.
+                var acc: Float = 0
+                for i in 0..<n { acc += samples[i] * samples[i] }
+                if index % 2 == 0 { sum.left += acc; frames.left += n }
+                else { sum.right += acc; frames.right += n }
+            }
+        }
+        guard frames.left + frames.right > 0 else { return }
+        // A mono stream feeds both sides.
+        if frames.right == 0 { sum.right = sum.left; frames.right = frames.left }
+
+        let rmsLeft = sqrt(sum.left / Float(max(frames.left, 1)))
+        let rmsRight = sqrt(sum.right / Float(max(frames.right, 1)))
+        let rmsBoth = sqrt((sum.left + sum.right) / Float(frames.left + frames.right))
 
         state.withLock { s in
-            // Fast attack, slower release, like a VU meter.
-            let k: Float = target > s.level ? 0.5 : 0.08
-            s.level += (target - s.level) * k
+            s.level = follow(s.level, rms: rmsBoth, gain: s.gain)
+            s.left = follow(s.left, rms: rmsLeft, gain: s.gain)
+            s.right = follow(s.right, rms: rmsRight, gain: s.gain)
         }
+    }
+
+    /// Envelope follower: maps RMS to 0...1 and smooths it with a fast attack and slower release.
+    private func follow(_ current: Float, rms: Float, gain: Float) -> Float {
+        let db = 20 * log10(max(rms * gain, 1e-7))
+        // Map -55 dB ... -6 dB onto 0 ... 1.
+        let target = min(max((db + 55) / 49, 0), 1)
+        let k: Float = target > current ? 0.5 : 0.08
+        return current + (target - current) * k
     }
 
     // MARK: - Helpers
