@@ -13,6 +13,8 @@ enum SettingsKey {
     static let sensitivity = "sensitivity"
     /// Selected visualization (`VisualizerMode` raw value).
     static let mode = "mode"
+    /// Show the "controls are on the left" hint on entering full screen.
+    static let fullScreenHint = "fullScreenHint"
     /// Old app-wide stereo switch, replaced by one switch per mode.
     static let legacyStereo = "stereo"
 
@@ -56,8 +58,21 @@ enum WaveformSettings {
     static let defaultBarWidth = 2.0
 }
 
+enum SpectrumSettings {
+    static let barWidth = "spectrum.barWidth"
+    static let rangeDB = "spectrum.rangeDB"
+    static let smoothing = "spectrum.smoothing"
+    /// Left channel above the centre line, right channel below.
+    static let stereo = "spectrum.stereo"
+
+    static let defaultBarWidth = 4.0
+    static let defaultRangeDB = 36.0
+    static let defaultSmoothing = 0.8
+}
+
 struct SettingsView: View {
     @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
+    @AppStorage(SettingsKey.fullScreenHint) private var fullScreenHint = true
 
     @AppStorage(CampfireSettings.bellStrength) private var bellStrength = CampfireSettings.defaultBellStrength
     @AppStorage(CampfireSettings.bellWidth) private var bellWidth = CampfireSettings.defaultBellWidth
@@ -72,6 +87,11 @@ struct SettingsView: View {
     @AppStorage(WaveformSettings.fade) private var waveFade = true
     @AppStorage(WaveformSettings.rangeDB) private var waveRange = WaveformSettings.defaultRangeDB
     @AppStorage(WaveformSettings.stereo) private var waveStereo = false
+
+    @AppStorage(SpectrumSettings.barWidth) private var specBarWidth = SpectrumSettings.defaultBarWidth
+    @AppStorage(SpectrumSettings.rangeDB) private var specRange = SpectrumSettings.defaultRangeDB
+    @AppStorage(SpectrumSettings.smoothing) private var specSmoothing = SpectrumSettings.defaultSmoothing
+    @AppStorage(SpectrumSettings.stereo) private var specStereo = false
 
     /// The slider works on a log2 scale so ×0.5 and ×2 sit symmetrically around ×1.
     private var sensitivitySlider: Binding<Double> {
@@ -93,15 +113,22 @@ struct SettingsView: View {
                 }
                 valueRow("×\(sensitivity.formatted(.number.precision(.fractionLength(2))))",
                          note: "Чем выше, тем сильнее визуализация реагирует на тихий звук.")
+
+                Toggle(isOn: $fullScreenHint) {
+                    Text("Подсказка в полноэкранном режиме")
+                    Text("При входе в полноэкранный режим напоминать, что управление у левого края.")
+                }
             } header: {
                 bubbleHeader("Общие", systemImage: "slider.horizontal.3",
-                             isDefault: abs(sensitivity - 1) < 0.001) {
+                             isDefault: abs(sensitivity - 1) < 0.001 && fullScreenHint) {
                     sensitivity = 1
+                    fullScreenHint = true
                 }
             }
 
             campfireBubble
             waveformBubble
+            spectrumBubble
         }
         .formStyle(.grouped)
         .frame(width: 480)
@@ -179,6 +206,36 @@ struct SettingsView: View {
             }
         } footer: {
             Text("Уровень подстраивается под громкость трека. Чем меньше диапазон, тем сильнее видна разница между тихим и громким.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var spectrumBubble: some View {
+        Section {
+            slider("Толщина столбиков", value: $specBarWidth, in: 1...12, step: 0.5,
+                   text: specBarWidth.formatted(.number.precision(.fractionLength(1))) + " pt")
+            slider("Диапазон громкости", value: $specRange, in: 18...60, step: 3,
+                   text: specRange.formatted(.number.precision(.fractionLength(0))) + " дБ")
+            slider("Плавность спада", value: $specSmoothing, in: 0...0.95,
+                   text: (specSmoothing * 100).formatted(.number.precision(.fractionLength(0))) + " %")
+            Toggle(isOn: $specStereo) {
+                Text("Стерео")
+                Text("Левый канал над центральной линией, правый — под ней.")
+            }
+        } header: {
+            bubbleHeader(VisualizerMode.spectrum,
+                         isDefault: specBarWidth == SpectrumSettings.defaultBarWidth
+                            && specRange == SpectrumSettings.defaultRangeDB
+                            && specSmoothing == SpectrumSettings.defaultSmoothing
+                            && !specStereo) {
+                specBarWidth = SpectrumSettings.defaultBarWidth
+                specRange = SpectrumSettings.defaultRangeDB
+                specSmoothing = SpectrumSettings.defaultSmoothing
+                specStereo = false
+            }
+        } footer: {
+            Text("Басы слева, высокие справа (30 Гц – 16 кГц, логарифмическая шкала). Уровень подстраивается под трек.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

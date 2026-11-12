@@ -10,6 +10,7 @@ import SwiftUI
 enum VisualizerMode: String, CaseIterable, Identifiable {
     case campfire
     case waveform
+    case spectrum
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
         switch self {
         case .campfire: "Костёр"
         case .waveform: "Вейвформа"
+        case .spectrum: "АЧХ"
         }
     }
 
@@ -24,6 +26,7 @@ enum VisualizerMode: String, CaseIterable, Identifiable {
         switch self {
         case .campfire: "flame.fill"
         case .waveform: "waveform.path"
+        case .spectrum: "chart.bar.xaxis"
         }
     }
 }

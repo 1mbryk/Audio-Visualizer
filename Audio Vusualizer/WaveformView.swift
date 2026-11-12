@@ -134,46 +134,19 @@ struct WaveformView: View {
         let reference = level.update(with: up + down)
         let range = Float(rangeDB)
         let mid = size.height / 2
-        let maxHalf = mid * 0.9
+        // Bars may use the whole height; only a hairline is kept free at the edges.
+        let maxHalf = mid - 1
         func height(_ db: Float) -> CGFloat {
             let v = min(max(1 + (db - reference) / range, 0), 1)
             // Curve that stretches the loud end, so beats stand out from sustained parts.
             return CGFloat(pow(v, 1.7)) * maxHalf
         }
 
-        var path = Path()
         // Right-align the bars, then slide them left as the next bar fills up.
-        let origin = size.width - CGFloat(columns) * step + step - scroll
-        for c in 0..<columns {
-            let x = origin + CGFloat(c) * step - step
-            let h1 = max(height(up[c]), 0.5)
-            let h2 = max(height(down[c]), 0.5)
-            let rect = CGRect(x: x, y: mid - h1, width: barWidth, height: h1 + h2)
-            path.addRoundedRect(in: rect, cornerSize: CGSize(width: barWidth / 2, height: barWidth / 2))
-        }
-
-        // Bright at the centre, cooler towards the peaks.
-        let colors: [Color] = stereo
-            ? [Color(red: 0.3, green: 0.6, blue: 1), Color(red: 0.2, green: 0.95, blue: 1),
-               Color(red: 1, green: 0.4, blue: 0.75), Color(red: 1, green: 0.55, blue: 0.4)]
-            : [Color(red: 0.6, green: 0.4, blue: 1), Color(red: 0.2, green: 0.95, blue: 1),
-               Color(red: 0.2, green: 0.95, blue: 1), Color(red: 0.6, green: 0.4, blue: 1)]
-        let shading = GraphicsContext.Shading.linearGradient(
-            Gradient(stops: [
-                .init(color: colors[0], location: 0.05),
-                .init(color: colors[1], location: 0.5),
-                .init(color: colors[2], location: 0.5),
-                .init(color: colors[3], location: 0.95),
-            ]),
-            startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: size.height))
-
-        // Soft glow, then the bars themselves.
-        context.drawLayer { layer in
-            layer.addFilter(.blur(radius: 8))
-            layer.opacity = 0.6
-            layer.fill(path, with: shading)
-        }
-        context.fill(path, with: shading)
+        let origin = size.width - CGFloat(columns) * step - scroll
+        MirroredBars.draw(in: &context, size: size,
+                          up: up.map(height), down: down.map(height),
+                          originX: origin, step: step, barWidth: barWidth, stereo: stereo)
 
         // The past fades out to the left.
         guard fade else { return }

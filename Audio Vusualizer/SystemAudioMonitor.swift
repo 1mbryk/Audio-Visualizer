@@ -75,6 +75,10 @@ nonisolated final class SystemAudioMonitor: @unchecked Sendable {
     /// Frames per peak value in `recentPeaks`.
     static var peakBlock: Int { State.peakBlock }
 
+    /// Number of peak blocks recorded so far; stops growing while nothing is playing
+    /// (the system delivers no audio then).
+    var blockCount: Int { state.withLock { $0.totalBlocks } }
+
     /// RMS of each peak block, per channel, oldest first (gain not applied).
     /// `end` is the absolute number of blocks recorded so far, i.e. the index just
     /// after the newest returned block; it lets views keep bars anchored to the audio.
