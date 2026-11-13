@@ -135,6 +135,16 @@ struct SettingsView: View {
     @AppStorage(SpectrumSettings.rangeDB) private var specRange = SpectrumSettings.defaultRangeDB
     @AppStorage(SpectrumSettings.smoothing) private var specSmoothing = SpectrumSettings.defaultSmoothing
     @AppStorage(SpectrumSettings.stereo) private var specStereo = false
+    @AppStorage(BarPalette.Keys("waveform").style) private var waveColorStyle = BarColorStyle.gradient
+    @AppStorage(BarPalette.Keys("waveform").center) private var waveColorCenter = BarPalette.defaultCenter
+    @AppStorage(BarPalette.Keys("waveform").edge) private var waveColorEdge = BarPalette.defaultEdge
+    @AppStorage(BarPalette.Keys("waveform").rightCenter) private var waveColorRightCenter = BarPalette.defaultRightCenter
+    @AppStorage(BarPalette.Keys("waveform").rightEdge) private var waveColorRightEdge = BarPalette.defaultRightEdge
+    @AppStorage(BarPalette.Keys("spectrum").style) private var specColorStyle = BarColorStyle.gradient
+    @AppStorage(BarPalette.Keys("spectrum").center) private var specColorCenter = BarPalette.defaultCenter
+    @AppStorage(BarPalette.Keys("spectrum").edge) private var specColorEdge = BarPalette.defaultEdge
+    @AppStorage(BarPalette.Keys("spectrum").rightCenter) private var specColorRightCenter = BarPalette.defaultRightCenter
+    @AppStorage(BarPalette.Keys("spectrum").rightEdge) private var specColorRightEdge = BarPalette.defaultRightEdge
 
     @AppStorage(MatrixSettings.glyphSize) private var matrixGlyphSize = MatrixSettings.defaultGlyphSize
     @AppStorage(MatrixSettings.speed) private var matrixSpeed = MatrixSettings.defaultSpeed
@@ -248,14 +258,23 @@ struct SettingsView: View {
                    text: waveRange.formatted(.number.precision(.fractionLength(0))) + " дБ")
             Toggle("Затухание прошлого", isOn: $waveFade)
             channelsPicker($waveStereo)
+            colorRows(style: $waveColorStyle, center: $waveColorCenter, edge: $waveColorEdge,
+                      rightCenter: $waveColorRightCenter, rightEdge: $waveColorRightEdge, stereo: waveStereo)
         } header: {
             bubbleHeader(VisualizerMode.waveform,
                          isDefault: waveSeconds == WaveformSettings.defaultSeconds
                             && waveBarWidth == WaveformSettings.defaultBarWidth
                             && waveFade
                             && waveRange == WaveformSettings.defaultRangeDB
-                            && !waveStereo) {
+                            && !waveStereo
+                            && (isDefaultPalette(waveColorStyle, waveColorCenter, waveColorEdge,
+                                                 waveColorRightCenter, waveColorRightEdge))) {
                 waveStereo = false
+                waveColorStyle = .gradient
+                waveColorCenter = BarPalette.defaultCenter
+                waveColorEdge = BarPalette.defaultEdge
+                waveColorRightCenter = BarPalette.defaultRightCenter
+                waveColorRightEdge = BarPalette.defaultRightEdge
                 waveRange = WaveformSettings.defaultRangeDB
                 waveSeconds = WaveformSettings.defaultSeconds
                 waveBarWidth = WaveformSettings.defaultBarWidth
@@ -277,12 +296,21 @@ struct SettingsView: View {
             slider("Плавность спада", value: $specSmoothing, in: 0...0.95,
                    text: (specSmoothing * 100).formatted(.number.precision(.fractionLength(0))) + " %")
             channelsPicker($specStereo)
+            colorRows(style: $specColorStyle, center: $specColorCenter, edge: $specColorEdge,
+                      rightCenter: $specColorRightCenter, rightEdge: $specColorRightEdge, stereo: specStereo)
         } header: {
             bubbleHeader(VisualizerMode.spectrum,
                          isDefault: specBarWidth == SpectrumSettings.defaultBarWidth
                             && specRange == SpectrumSettings.defaultRangeDB
                             && specSmoothing == SpectrumSettings.defaultSmoothing
-                            && !specStereo) {
+                            && !specStereo
+                            && (isDefaultPalette(specColorStyle, specColorCenter, specColorEdge,
+                                                 specColorRightCenter, specColorRightEdge))) {
+                specColorStyle = .gradient
+                specColorCenter = BarPalette.defaultCenter
+                specColorEdge = BarPalette.defaultEdge
+                specColorRightCenter = BarPalette.defaultRightCenter
+                specColorRightEdge = BarPalette.defaultRightEdge
                 specBarWidth = SpectrumSettings.defaultBarWidth
                 specRange = SpectrumSettings.defaultRangeDB
                 specSmoothing = SpectrumSettings.defaultSmoothing
@@ -328,6 +356,39 @@ struct SettingsView: View {
     }
 
     // MARK: Building blocks
+
+    /// Bar colours: a gradient (centre → bar ends, own pair for the right channel in
+    /// stereo) or a rainbow across the width.
+    @ViewBuilder
+    private func colorRows(style: Binding<BarColorStyle>, center: Binding<Color>, edge: Binding<Color>,
+                           rightCenter: Binding<Color>, rightEdge: Binding<Color>, stereo: Bool) -> some View {
+        Picker(selection: style) {
+            ForEach(BarColorStyle.allCases) { Text($0.title).tag($0) }
+        } label: {
+            Text("Цвета")
+            Text(style.wrappedValue == .gradient
+                 ? "От центральной линии к концам столбиков."
+                 : "Радуга по ширине: красный слева, фиолетовый справа.")
+        }
+        .pickerStyle(.segmented)
+        if style.wrappedValue == .gradient {
+            ColorPicker(stereo ? "У центра — левый канал" : "У центра", selection: center, supportsOpacity: false)
+            ColorPicker(stereo ? "На краях — левый канал" : "На краях", selection: edge, supportsOpacity: false)
+            if stereo {
+                ColorPicker("У центра — правый канал", selection: rightCenter, supportsOpacity: false)
+                ColorPicker("На краях — правый канал", selection: rightEdge, supportsOpacity: false)
+            }
+        }
+    }
+
+    private func isDefaultPalette(_ style: BarColorStyle, _ center: Color, _ edge: Color,
+                                  _ rightCenter: Color, _ rightEdge: Color) -> Bool {
+        style == .gradient
+            && center.rawValue == BarPalette.defaultCenter.rawValue
+            && edge.rawValue == BarPalette.defaultEdge.rawValue
+            && rightCenter.rawValue == BarPalette.defaultRightCenter.rawValue
+            && rightEdge.rawValue == BarPalette.defaultRightEdge.rawValue
+    }
 
     /// Моно / Стерео submode of the bar modes (stereo: left channel above, right below).
     private func channelsPicker(_ stereo: Binding<Bool>) -> some View {

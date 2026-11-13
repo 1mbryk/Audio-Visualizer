@@ -31,6 +31,17 @@ struct SpectrumView: View {
     private var barWidth: CGFloat { CGFloat(barWidthSetting) }
     private var barGap: CGFloat { max(1, barWidth / 2) }
 
+    @AppStorage(BarPalette.Keys("spectrum").style) private var colorStyle = BarColorStyle.gradient
+    @AppStorage(BarPalette.Keys("spectrum").center) private var colorCenter = BarPalette.defaultCenter
+    @AppStorage(BarPalette.Keys("spectrum").edge) private var colorEdge = BarPalette.defaultEdge
+    @AppStorage(BarPalette.Keys("spectrum").rightCenter) private var colorRightCenter = BarPalette.defaultRightCenter
+    @AppStorage(BarPalette.Keys("spectrum").rightEdge) private var colorRightEdge = BarPalette.defaultRightEdge
+
+    private var palette: BarPalette {
+        BarPalette(style: colorStyle, center: colorCenter, edge: colorEdge,
+                   rightCenter: colorRightCenter, rightEdge: colorRightEdge)
+    }
+
     var body: some View {
         TimelineView(.animation) { timeline in
             // Capturing the date makes the Canvas redraw every frame.
@@ -101,6 +112,7 @@ struct SpectrumView: View {
         }
 
         MirroredBars.draw(in: &context, size: size, up: state.up, down: state.down,
-                          originX: 0, step: step, barWidth: width, stereo: stereo)
+                          originX: 0, step: step, barWidth: width, stereo: stereo,
+                          palette: palette)
     }
 }

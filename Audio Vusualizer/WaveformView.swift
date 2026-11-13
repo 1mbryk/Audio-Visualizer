@@ -79,6 +79,17 @@ struct WaveformView: View {
     private var barWidth: CGFloat { CGFloat(barWidthSetting) }
     private var barGap: CGFloat { max(1, barWidth / 2) }
 
+    @AppStorage(BarPalette.Keys("waveform").style) private var colorStyle = BarColorStyle.gradient
+    @AppStorage(BarPalette.Keys("waveform").center) private var colorCenter = BarPalette.defaultCenter
+    @AppStorage(BarPalette.Keys("waveform").edge) private var colorEdge = BarPalette.defaultEdge
+    @AppStorage(BarPalette.Keys("waveform").rightCenter) private var colorRightCenter = BarPalette.defaultRightCenter
+    @AppStorage(BarPalette.Keys("waveform").rightEdge) private var colorRightEdge = BarPalette.defaultRightEdge
+
+    private var palette: BarPalette {
+        BarPalette(style: colorStyle, center: colorCenter, edge: colorEdge,
+                   rightCenter: colorRightCenter, rightEdge: colorRightEdge)
+    }
+
     var body: some View {
         TimelineView(.animation) { timeline in
             // Capturing the date makes the Canvas redraw every frame.
@@ -156,7 +167,8 @@ struct WaveformView: View {
         let origin = size.width - CGFloat(columns) * step - scroll
         MirroredBars.draw(in: &context, size: size,
                           up: up.map(height), down: down.map(height),
-                          originX: origin, step: step, barWidth: barWidth, stereo: stereo)
+                          originX: origin, step: step, barWidth: barWidth, stereo: stereo,
+                          palette: palette)
 
         // The past fades out to the left.
         guard fade else { return }
