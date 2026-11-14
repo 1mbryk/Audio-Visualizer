@@ -5,10 +5,12 @@
 //  Created by Mацвей Пажытных on 12.11.2026.
 //
 
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
     @State private var audio = SystemAudioMonitor()
+    @State private var external = ExternalDisplay()
     @State private var errorText: String?
     @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.0
     @AppStorage(SettingsKey.mode) private var mode = VisualizerMode.campfire
@@ -92,20 +94,77 @@ struct ContentView: View {
                     errorText = "Не удалось захватить системный звук: \(error.localizedDescription)"
                 }
             }
-            .onDisappear { audio.stop() }
+            .background(WindowReader { external.mainWindow = $0 })
+            .onDisappear {
+                external.stop()
+                audio.stop()
+            }
     }
 
-    /// Every visualization runs edge to edge, under the header.
+    /// Every visualization runs edge to edge, under the header. While it's shown on
+    /// another display, this window only says where, so it isn't drawn twice.
+    @ViewBuilder
     private var visualizer: some View {
-        Group {
-            switch mode {
-            case .campfire: CampfireView(audio: audio)
-            case .waveform: WaveformView(audio: audio)
-            case .spectrum: SpectrumView(audio: audio)
-            case .matrix: MatrixView(audio: audio)
-            }
+        if external.isPresenting, let target = external.target {
+            castingPlaceholder(target)
+        } else {
+            VisualizerStage(audio: audio)
+                .ignoresSafeArea()
         }
-        .ignoresSafeArea()
+    }
+
+    private func castingPlaceholder(_ target: ExternalDisplay.Screen) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "airplay.video")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("Показывается на «\(target.name)»")
+                .font(.title3.weight(.semibold))
+            Button("Остановить трансляцию") { external.stop() }
+                .buttonStyle(.glass)
+                .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Casting
+
+    /// Picks the display to show the visualizer on: an AirPlay display used as a
+    /// separate display, a TV, a projector.
+    private var castMenu: some View {
+        Menu {
+            if external.screens.isEmpty {
+                Text("Нет других экранов")
+                Text("AirPlay: Пункт управления → Повтор экрана → «Использовать как отдельный дисплей»")
+            } else {
+                Section("Показать на экране") {
+                    ForEach(external.screens) { screen in
+                        Toggle(screen.name, isOn: Binding(
+                            get: { external.target?.id == screen.id },
+                            set: { on in
+                                if on {
+                                    external.present(on: screen) { VisualizerStage(audio: audio) }
+                                } else {
+                                    external.stop()
+                                }
+                            }))
+                    }
+                }
+            }
+            if external.target != nil {
+                Divider()
+                Button("Остановить трансляцию") { external.stop() }
+            }
+            Divider()
+            Button("Настройки дисплеев…") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        } label: {
+            Label("Трансляция", systemImage: external.target != nil ? "airplay.video.circle.fill" : "airplay.video")
+        }
+        .help("Показать визуализацию на другом экране или AirPlay")
     }
 
     // MARK: Hint
@@ -158,6 +217,10 @@ struct ContentView: View {
                 submodePicker(for: mode)
                     .fixedSize()
             }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            castMenu
+                .labelStyle(.iconOnly)
         }
         ToolbarItem(placement: .primaryAction) {
             settingsButton
@@ -232,6 +295,12 @@ struct ContentView: View {
             }
 
             Spacer()
+
+            castMenu
+                .labelStyle(.titleAndIcon)
+                .frame(maxWidth: .infinity)
+                .buttonStyle(.glass)
+                .controlSize(.large)
 
             SettingsLink {
                 Label("Настройки", systemImage: "gearshape")
@@ -359,6 +428,21 @@ private struct SelectionGlass: ViewModifier {
                 .glassEffectID(id, in: namespace)
         } else {
             content
+        }
+    }
+}
+
+/// The selected visualization, drawn from `audio`; used by the main window and the cast display.
+struct VisualizerStage: View {
+    let audio: SystemAudioMonitor
+    @AppStorage(SettingsKey.mode) private var mode = VisualizerMode.campfire
+
+    var body: some View {
+        switch mode {
+        case .campfire: CampfireView(audio: audio)
+        case .waveform: WaveformView(audio: audio)
+        case .spectrum: SpectrumView(audio: audio)
+        case .matrix: MatrixView(audio: audio)
         }
     }
 }

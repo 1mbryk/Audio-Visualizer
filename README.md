@@ -36,6 +36,15 @@ Switch the mode and submode in the window's header.
 
 In full screen the header is hidden so nothing gets in the way of the picture. The controls live in a sidebar at the **left edge**: move the pointer there and it slides in, with the window buttons, the list of modes and submodes, and Settings. A hint about it appears when you enter full screen (you can turn it off in Settings).
 
+## Another display and AirPlay
+
+The visualizer can run full screen on another display — a TV, a projector, or an Apple TV / AirPlay-capable TV — while the controls stay on your Mac.
+
+1. Connect the display. For AirPlay: Control Centre → Screen Mirroring → pick the device → **Use as Separate Display**.
+2. Click the AirPlay button in the window's header (in full screen it's in the sidebar) and choose the display.
+
+The other display shows only the picture, with no controls or pointer; the main window says where the picture is and has a button to stop. Mode, submode and colours changes show up there straight away. If an AirPlay display drops out, the picture comes back on its own when it reconnects.
+
 ## Settings
 
 Open with <kbd>⌘</kbd> <kbd>,</kbd> or the gear in the header. Settings are grouped per mode:
@@ -87,4 +96,5 @@ xcodebuild -project "Audio Vusualizer.xcodeproj" -scheme "Audio Vusualizer" -con
 | `SpectrumView.swift`, `MirroredBars.swift`, `BarPalette.swift` | Spectrum mode and the shared bars with their colours |
 | `MatrixView.swift` | Matrix mode |
 | `ContentView.swift` | window, header, full-screen sidebar |
+| `ExternalDisplay.swift` | showing the visualizer on another display |
 | `SettingsView.swift` | settings window |
