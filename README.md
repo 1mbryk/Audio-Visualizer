@@ -97,4 +97,5 @@ xcodebuild -project "Audio Vusualizer.xcodeproj" -scheme "Audio Vusualizer" -con
 | `MatrixView.swift` | Matrix mode |
 | `ContentView.swift` | window, header, full-screen sidebar |
 | `ExternalDisplay.swift` | showing the visualizer on another display |
+| `FrameTimeline.swift` | per-frame clock that keeps running while a menu is open |
 | `SettingsView.swift` | settings window |

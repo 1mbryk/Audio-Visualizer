@@ -21,7 +21,7 @@ struct CampfireView: View {
     @AppStorage(CampfireSettings.tongueWidth) private var tongueWidth = CampfireSettings.defaultTongueWidth
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        FrameTimeline { timeline in
             GeometryReader { geo in
                 let _ = applySettings()
                 let channels = audio.stereoLevels

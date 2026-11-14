@@ -91,7 +91,7 @@ struct WaveformView: View {
     }
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        FrameTimeline { timeline in
             // Capturing the date makes the Canvas redraw every frame.
             Canvas { [date = timeline.date] context, size in
                 draw(in: &context, size: size, date: date)

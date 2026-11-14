@@ -165,7 +165,7 @@ struct MatrixView: View {
     private var cell: CGSize { CGSize(width: glyphSize * 0.9, height: glyphSize * 1.15) }
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        FrameTimeline { timeline in
             GeometryReader { geo in
                 let frame = step(date: timeline.date, size: geo.size)
                 let glyphs = currentAtlas()
