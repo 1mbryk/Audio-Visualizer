@@ -59,6 +59,22 @@ Bar colours are either a **gradient** between two colours you pick (from the cen
 
 Each group has a Reset button, and all settings persist between launches.
 
+## Installation
+
+Run in Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/1mbryk/Audio-Visualizer/main/install.sh | bash
+```
+
+The script downloads the source, builds the app and puts it into `/Applications`; run it again to update. The app is built on your Mac and signed ad hoc, so no Apple developer account is needed — but **Xcode** is (the command line tools alone can't build an app). Optional settings: `REF=<branch or tag>` installs another version, `INSTALL_DIR=~/Applications` another folder, e.g.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/1mbryk/Audio-Visualizer/main/install.sh | INSTALL_DIR=~/Applications bash
+```
+
+To uninstall, delete `Audio Vusualizer.app` from `/Applications`.
+
 ## Requirements
 
 - macOS 27.2 or later
